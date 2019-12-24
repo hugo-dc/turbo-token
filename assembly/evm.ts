@@ -1,9 +1,21 @@
 import { debug, debugMem } from './debug'
-import { bignum_add256, debug_print32 } from './env'
-import { Opcodes } from './opcodes'
+import { bignum_add256, bignum_sub256, debug_print32 } from '../node_modules/scout.ts/assembly/env'
+import { Opcodes, getOpcodeFee } from './opcodes'
+import { cmpBuf } from './util'
+
+function substractFee(opcode: i32, gasLimit: Uint8Array): Uint8Array {
+  let result = new Uint8Array(32)
+  result.fill(0, 0, 32)
+  const fee = getOpcodeFee(opcode)
+  if (cmpBuf(fee, gasLimit) === 1) {
+    throw new Error('Out of Gas')
+  }
+  bignum_sub256(gasLimit.buffer as usize, fee.buffer as usize, result.buffer as usize)
+  return result
+}
 
 // TODO: Assume RETURN returns one byte, return 0 if no RETURN
-export function interpret(code: Uint8Array): u8 {
+export function interpret(code: Uint8Array, gasLimit: Uint8Array): u8 {
   // stack size is 100 elements
   // each stack element is 32 bytes
   const stackSize = 100
@@ -37,7 +49,8 @@ export function interpret(code: Uint8Array): u8 {
 
     debug_print32(opcode)
     switch (opcode) {
-      case Opcodes.Push1:
+    case Opcodes.Push1: {
+      gasLimit = substractFee(opcode, gasLimit)
         let push_val = code[pc]
         pc++
         let stack_slot = stackElements[stackTop]
@@ -48,20 +61,26 @@ export function interpret(code: Uint8Array): u8 {
 
         stackTop++
 
-        break
-      case Opcodes.Add:
+      break
+    }
+    case Opcodes.Add: {
+      gasLimit = substractFee(opcode, gasLimit)
         let a_pos = stackPtr + 32 * (stackTop - 1)
         let b_pos = stackPtr + 32 * (stackTop - 2)
 
         bignum_add256(a_pos, b_pos, b_pos)
 
         stackTop--
-        break
-      case Opcodes.SStore:
+      break
+    }
+    case Opcodes.SStore: {
+      gasLimit = substractFee(opcode, gasLimit)
         // TODO:
         // store(position, value)
-        break
-      case Opcodes.MStore8:
+      break
+    }
+    case Opcodes.MStore8: {
+      gasLimit = substractFee(opcode, gasLimit)
         let offset = stackElements[stackTop - 1]
         let val = stackElements[stackTop - 2]
 
@@ -70,8 +89,10 @@ export function interpret(code: Uint8Array): u8 {
         store<u8>(memoryPtr + offsetU8, val[31], 0)
 
         stackTop -= 2
-        break
-      case Opcodes.Return:
+      break
+    }
+    case Opcodes.Return: {
+      gasLimit = substractFee(opcode, gasLimit)
         let offset = stackElements[stackTop - 1]
         let length = stackElements[stackTop - 2]
 
@@ -84,11 +105,13 @@ export function interpret(code: Uint8Array): u8 {
         returnValue = load<u8>(memoryPtr + offsetU8)
         // Finish execution
         pc = code.length
-        break
-      default:
+      break
+    }
+    default: {
         debug_print32(404)
         pc = code.length // unknown opcode, finish execution
-        break
+      break
+    }
     }
   }
 

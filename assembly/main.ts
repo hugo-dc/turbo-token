@@ -31,9 +31,12 @@ import {
   eth2_savePostStateRoot,
   bignum_add256,
   bignum_sub256,
+  bignum_mul256,
 } from '../node_modules/scout.ts/assembly/env'
 
 import { interpret } from './evm'
+
+import { baseFee, defaultGasLimit, gasPrice } from './gas'
 
 export enum Opcode {
   Branch = 0,
@@ -110,6 +113,9 @@ export function processBlock(preStateRoot: Uint8Array, blockData: Uint8Array): U
     let value = tx.children[1].buffer
     let nonce = tx.children[2].buffer
 
+    let gasLimit: Uint8Array = new Uint8Array(32)
+    bignum_sub256(defaultGasLimit.buffer as usize, baseFee.buffer as usize, gasLimit.buffer as usize)
+
     // TODO: Hash unsigned tx, recover from address, check against fromIdx
     let fromAccountRaw = accounts[fromIdx].buffer
     // If `from` has been modified by previous txes
@@ -140,7 +146,10 @@ export function processBlock(preStateRoot: Uint8Array, blockData: Uint8Array): U
     value = padBuf(value, 32)
     let fromBalance = padBuf(fromAccount[1], 32)
     let newFromBalance = new ArrayBuffer(32)
-    bignum_sub256(fromBalance.buffer as usize, value.buffer as usize, newFromBalance as usize)
+    let txCost = new ArrayBuffer(32)
+    bignum_mul256(gasLimit.buffer as usize, gasPrice.buffer as usize, txCost as usize)
+    bignum_sub256(fromBalance.buffer as usize, txCost as usize, newFromBalance as usize)
+    bignum_sub256(newFromBalance as usize, value.buffer as usize, newFromBalance as usize)
 
     let toBalance = padBuf(toAccount[1], 32)
     let newToBalance = new ArrayBuffer(32)
@@ -174,7 +183,7 @@ export function processBlock(preStateRoot: Uint8Array, blockData: Uint8Array): U
     // check if to account is contract
     if (isContract(toAccount)) {
       let code = getCode(toAccount, codeHashes, bytecode)
-      let returnValue = interpret(code)
+      let returnValue = interpret(code, gasLimit)
       if (expectedReturnValue.length !== 1) throw new Error('Unimplemented')
       if (returnValue !== expectedReturnValue[0]) {
         throw new Error('Invalid return value')
