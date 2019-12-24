@@ -114,7 +114,11 @@ export function processBlock(preStateRoot: Uint8Array, blockData: Uint8Array): U
     let nonce = tx.children[2].buffer
 
     let gasLimit: Uint8Array = new Uint8Array(32)
-    bignum_sub256(defaultGasLimit.buffer as usize, baseFee.buffer as usize, gasLimit.buffer as usize)
+    bignum_sub256(
+      defaultGasLimit.buffer as usize,
+      baseFee.buffer as usize,
+      gasLimit.buffer as usize,
+    )
 
     // TODO: Hash unsigned tx, recover from address, check against fromIdx
     let fromAccountRaw = accounts[fromIdx].buffer
